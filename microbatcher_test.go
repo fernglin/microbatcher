@@ -15,25 +15,42 @@ type ProcessedResults struct {
 	Success bool
 }
 
+type MockBatchProcessor struct{}
+
+func (bp *MockBatchProcessor) Process(jobs []microbatcher.Job) []microbatcher.JobResult {
+	results := make([]microbatcher.JobResult, len(jobs))
+	for i, job := range jobs {
+		// Perform processing on the job
+		fmt.Println("Processing job:", job)
+		results[i] = "Result for job " + fmt.Sprint(job)
+	}
+	return results
+}
+
 func TestMicroBatcher(t *testing.T) {
 	batchSize := 5
 	batchFreq := time.Millisecond * 500
 
+	processor := &MockBatchProcessor{}
+
 	// Instantiate new MicroBatcher
-	batcher := microbatcher.NewMicroBatcher(batchSize, batchFreq, mockBatchProcessor)
-	resultsCh := batcher.ResultsChannel()
+	batcher, err := microbatcher.NewMicroBatcher(batchSize, batchFreq, processor)
+	if err != nil {
+		fmt.Println("Error:", err)
+	}
 
 	// Start the MicroBatcher
 	batcher.Start()
 
 	// Submit jobs
-	for i := 0; i < 50; i++ {
-		job := microbatcher.Job{Data: i}
-		err := batcher.SubmitJob(job)
+	for i := 0; i < 15; i++ {
+		job := i
+		result, err := batcher.SubmitJob(job)
 		if err != nil {
 			fmt.Println("Error:", err)
-			break
+			continue
 		}
+		fmt.Println("Job result:", result)
 		assert.NoError(t, err)
 	}
 
@@ -43,35 +60,16 @@ func TestMicroBatcher(t *testing.T) {
 	// Shutdown the MicroBatcher
 	batcher.Shutdown()
 
-	for result := range resultsCh {
-		fmt.Println("Received result:", result)
-	}
-
 	// Attempt to submit more jobs
 	for i := 500; i < 650; i++ {
-		job := microbatcher.Job{Data: i}
+		job := i
 		batcher.SubmitJob(job)
-		err := batcher.SubmitJob(job)
+		result, err := batcher.SubmitJob(job)
 		if err != nil {
 			fmt.Println("Error:", err)
-			break
+			continue
 		}
+		fmt.Println("Job result:", result)
 		assert.Error(t, err)
 	}
-}
-
-// Mock BatchProcessor for Testing
-// Processor will print processed data when received from MicroBatcher
-func mockBatchProcessor(batch []microbatcher.Job) interface{} {
-	jobsDone := 0
-	// Process the batch of jobs
-	for _, job := range batch {
-		// Add some delay to emulate processing
-		time.Sleep(time.Millisecond * 10)
-		fmt.Println("Processed data:", job.Data)
-		jobsDone++
-	}
-	// Print when batch is processed
-	fmt.Println("--Batch Break--")
-	return ProcessedResults{JobDone: jobsDone, Success: true}
 }

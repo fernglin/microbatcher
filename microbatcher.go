@@ -12,22 +12,24 @@ type Job struct {
 }
 
 type MicroBatcher struct {
-	batchSize        int           // Maximum number of jobs per batch
-	batchFreq        time.Duration // Maximum time.Duration before a batch is sent for processing
-	jobsCh           chan Job      // Channel for incoming jobs
-	funcProcessBatch func([]Job)   // Function to process batches when ready
-	shutdownCh       chan struct{} // Channel to recieve shutdown signal
+	batchSize        int                     // Maximum number of jobs per batch
+	batchFreq        time.Duration           // Maximum time.Duration before a batch is sent for processing
+	jobsCh           chan Job                // Channel for incoming jobs
+	funcProcessBatch func([]Job) interface{} // Function to process batches when ready
+	resultsCh        chan interface{}        // Channel for results from BatchProcessor
+	shutdownCh       chan struct{}           // Channel to recieve shutdown signal
 	waitGroup        sync.WaitGroup
 }
 
 // Instantiate a new MicroBatcher with a specific batch size and frequency.
-func NewMicroBatcher(batchSize int, batchFreq time.Duration, funcProcessBatch func([]Job)) *MicroBatcher {
+func NewMicroBatcher(batchSize int, batchFreq time.Duration, funcProcessBatch func([]Job) interface{}) *MicroBatcher {
 	return &MicroBatcher{
 		batchSize:        batchSize,
 		batchFreq:        batchFreq,
 		jobsCh:           make(chan Job),
 		shutdownCh:       make(chan struct{}),
 		funcProcessBatch: funcProcessBatch,
+		resultsCh:        make(chan interface{}),
 	}
 }
 
@@ -81,6 +83,7 @@ func (mb *MicroBatcher) Start() {
 					mb.processBatch(batch)
 					// Wait for all tasks to complete
 					mb.waitGroup.Wait()
+					close(mb.resultsCh)
 				}
 				return
 			}
@@ -90,10 +93,18 @@ func (mb *MicroBatcher) Start() {
 
 // Send job for processing by BatchProcessor as a callback
 func (mb *MicroBatcher) processBatch(batch []Job) {
-	mb.funcProcessBatch(batch)
+	results := mb.funcProcessBatch(batch)
+	mb.resultsCh <- results
+}
+
+// Method to retreive results from the BatchProcessor
+func (mb *MicroBatcher) ResultsChannel() <-chan interface{} {
+	return mb.resultsCh
 }
 
 // Method to shut down the MicroBatcher
 func (mb *MicroBatcher) Shutdown() {
 	close(mb.shutdownCh)
+	// Wait for all tasks to complete
+	mb.waitGroup.Wait()
 }

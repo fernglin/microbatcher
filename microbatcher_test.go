@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/fernglin/microbatcher"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestMicroBatcher(t *testing.T) {
@@ -26,6 +27,7 @@ func TestMicroBatcher(t *testing.T) {
 			fmt.Println("Error:", err)
 			break
 		}
+		assert.NoError(t, err)
 	}
 
 	// Wait to allow for processing
@@ -43,6 +45,7 @@ func TestMicroBatcher(t *testing.T) {
 			fmt.Println("Error:", err)
 			break
 		}
+		assert.Error(t, err)
 	}
 }
 

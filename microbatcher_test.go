@@ -20,8 +20,8 @@ type JobResult struct {
 
 type MockBatchProcessor struct{}
 
-func (bp *MockBatchProcessor) Process(jobs []microbatcher.Job) microbatcher.BatchResult {
-	results := make(microbatcher.BatchResult, len(jobs))
+func (bp *MockBatchProcessor) Process(jobs []microbatcher.Job) microbatcher.JobResult {
+	results := make(microbatcher.JobResult, len(jobs))
 	for i, j := range jobs {
 		job := j.(Job)
 		time.Sleep(20 * time.Millisecond)

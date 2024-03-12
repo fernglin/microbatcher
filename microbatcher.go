@@ -11,10 +11,10 @@ import (
 type Job interface{}
 
 // Result of processing a batch of Jobs
-type BatchResult []interface{}
+type JobResult []interface{}
 
 type BatchProcessor interface {
-	Process(batch []Job) BatchResult
+	Process(batch []Job) JobResult
 }
 
 type Config struct {
@@ -25,11 +25,11 @@ type Config struct {
 
 type MicroBatcher struct {
 	Config         Config
-	batchProcessor BatchProcessor   // Hook for BatchProcessor
-	jobsCh         chan Job         // Channel for incoming jobs
-	batchCh        chan []Job       // Channel for sending job batches to process
-	resultsCh      chan BatchResult // Channel for results from BatchProcessor
-	shutdownCh     chan struct{}    // Channel to receive shutdown signal
+	batchProcessor BatchProcessor // Hook for BatchProcessor
+	jobsCh         chan Job       // Channel for incoming jobs
+	batchCh        chan []Job     // Channel for sending job batches to process
+	resultsCh      chan JobResult // Channel for results from BatchProcessor
+	shutdownCh     chan struct{}  // Channel to receive shutdown signal
 	wg             sync.WaitGroup
 }
 
@@ -47,7 +47,7 @@ func NewMicroBatcher(config Config, batchProcessor BatchProcessor) (*MicroBatche
 		batchProcessor: batchProcessor,
 		jobsCh:         make(chan Job),
 		batchCh:        make(chan []Job),
-		resultsCh:      make(chan BatchResult),
+		resultsCh:      make(chan JobResult),
 		shutdownCh:     make(chan struct{}),
 	}, nil
 }
@@ -63,7 +63,7 @@ func (mb *MicroBatcher) SubmitJob(job Job) error {
 }
 
 // Returns a channel to receive results of processed batches
-func (mb *MicroBatcher) GetBatchResults() <-chan BatchResult {
+func (mb *MicroBatcher) GetBatchResults() <-chan JobResult {
 	return mb.resultsCh
 }
 

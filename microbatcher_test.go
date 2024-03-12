@@ -9,32 +9,41 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// Mock type for returned results
-type ProcessedResults struct {
-	JobDone int
-	Success bool
+type Job struct {
+	ID int
+}
+
+type JobResult struct {
+	ID     int
+	Result string
 }
 
 type MockBatchProcessor struct{}
 
-func (bp *MockBatchProcessor) Process(jobs []microbatcher.Job) []microbatcher.JobResult {
-	results := make([]microbatcher.JobResult, len(jobs))
-	for i, job := range jobs {
-		// Perform processing on the job
-		fmt.Println("Processing job:", job)
-		results[i] = "Result for job " + fmt.Sprint(job)
+func (bp *MockBatchProcessor) Process(jobs []microbatcher.Job) microbatcher.BatchResult {
+	results := make(microbatcher.BatchResult, len(jobs))
+	for i, j := range jobs {
+		job := j.(Job)
+		time.Sleep(20 * time.Millisecond)
+		results[i] = JobResult{
+			ID:     job.ID,
+			Result: fmt.Sprintf("Processed job %d in batch", job.ID),
+		}
 	}
 	return results
 }
 
 func TestMicroBatcher(t *testing.T) {
-	batchSize := 5
-	batchFreq := time.Millisecond * 500
+	config := microbatcher.Config{
+		BatchSize:     5,
+		BatchInterval: time.Millisecond * 500,
+		ShowBatchInfo: true,
+	}
 
-	processor := &MockBatchProcessor{}
+	batchProcessor := &MockBatchProcessor{}
 
 	// Instantiate new MicroBatcher
-	batcher, err := microbatcher.NewMicroBatcher(batchSize, batchFreq, processor)
+	batcher, err := microbatcher.NewMicroBatcher(config, batchProcessor)
 	if err != nil {
 		fmt.Println("Error:", err)
 	}
@@ -42,34 +51,38 @@ func TestMicroBatcher(t *testing.T) {
 	// Start the MicroBatcher
 	batcher.Start()
 
+	// Start a goroutine to receive and process batch results
+	resultCh := batcher.GetBatchResults()
+	go func() {
+		for batchResult := range resultCh {
+			fmt.Printf("Batch result: %v\n", batchResult)
+		}
+	}()
+
 	// Submit jobs
-	for i := 0; i < 15; i++ {
-		job := i
-		result, err := batcher.SubmitJob(job)
+	for i := 0; i < 25; i++ {
+		job := Job{ID: i}
+		err := batcher.SubmitJob(job)
 		if err != nil {
 			fmt.Println("Error:", err)
 			continue
 		}
-		fmt.Println("Job result:", result)
 		assert.NoError(t, err)
 	}
 
-	// Wait to allow for processing
-	time.Sleep(time.Millisecond * 1000)
+	time.Sleep(2 * time.Second)
 
 	// Shutdown the MicroBatcher
 	batcher.Shutdown()
 
 	// Attempt to submit more jobs
-	for i := 500; i < 650; i++ {
-		job := i
-		batcher.SubmitJob(job)
-		result, err := batcher.SubmitJob(job)
+	for i := 1010; i < 1011; i++ {
+		job := Job{ID: i}
+		err := batcher.SubmitJob(job)
 		if err != nil {
 			fmt.Println("Error:", err)
 			continue
 		}
-		fmt.Println("Job result:", result)
 		assert.Error(t, err)
 	}
 }

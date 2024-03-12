@@ -2,95 +2,125 @@ package microbatcher
 
 import (
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 )
 
 // Incoming job to be sent for processing
-type Job struct {
-	Data interface{}
+type Job interface{}
+
+// Result of processing a batch of Jobs
+type BatchResult []interface{}
+
+type BatchProcessor interface {
+	Process(batch []Job) BatchResult
+}
+
+type Config struct {
+	BatchSize     int           // Max number of jobs per batch
+	BatchInterval time.Duration // Max interval before a batch is sent for processing
+	ShowBatchInfo bool          // Show information about batches processed (for testing)
 }
 
 type MicroBatcher struct {
-	batchSize        int           // Maximum number of jobs per batch
-	batchFreq        time.Duration // Maximum time.Duration before a batch is sent for processing
-	jobsCh           chan Job      // Channel for incoming jobs
-	funcProcessBatch func([]Job)   // Function to process batches when ready
-	shutdownCh       chan struct{} // Channel to recieve shutdown signal
-	waitGroup        sync.WaitGroup
+	Config         Config
+	batchProcessor BatchProcessor   // Hook for BatchProcessor
+	jobsCh         chan Job         // Channel for incoming jobs
+	batchCh        chan []Job       // Channel for sending job batches to process
+	resultsCh      chan BatchResult // Channel for results from BatchProcessor
+	shutdownCh     chan struct{}    // Channel to receive shutdown signal
+	wg             sync.WaitGroup
 }
 
 // Instantiate a new MicroBatcher with a specific batch size and frequency.
-func NewMicroBatcher(batchSize int, batchFreq time.Duration, funcProcessBatch func([]Job)) *MicroBatcher {
-	return &MicroBatcher{
-		batchSize:        batchSize,
-		batchFreq:        batchFreq,
-		jobsCh:           make(chan Job),
-		shutdownCh:       make(chan struct{}),
-		funcProcessBatch: funcProcessBatch,
+func NewMicroBatcher(config Config, batchProcessor BatchProcessor) (*MicroBatcher, error) {
+	if config.BatchSize <= 0 {
+		return nil, errors.New("batch size must be a positive integer")
 	}
+	if config.BatchInterval <= 0 {
+		return nil, errors.New("batch interval must be a positive time.Duration")
+	}
+
+	return &MicroBatcher{
+		Config:         config,
+		batchProcessor: batchProcessor,
+		jobsCh:         make(chan Job),
+		batchCh:        make(chan []Job),
+		resultsCh:      make(chan BatchResult),
+		shutdownCh:     make(chan struct{}),
+	}, nil
 }
 
 // Submits a job to the MicroBatcher.
 func (mb *MicroBatcher) SubmitJob(job Job) error {
 	select {
 	case <-mb.shutdownCh:
-		return errors.New("MicroBatcher has been shut down")
+		return errors.New("microBatcher has been shut down")
 	case mb.jobsCh <- job:
 		return nil
 	}
+}
 
+// Returns a channel to receive results of processed batches
+func (mb *MicroBatcher) GetBatchResults() <-chan BatchResult {
+	return mb.resultsCh
 }
 
 // Starts the MicroBatcher
 func (mb *MicroBatcher) Start() {
-	// Add waitGroup counter (i.e. Wait for 1 goroutine)
-	mb.waitGroup.Add(1)
+	go mb.startBatchingWorker()
+	mb.startProcessWorker()
+}
+
+// Worker that watches the jobs channels and timer
+func (mb *MicroBatcher) startBatchingWorker() {
+	batch := make([]Job, 0, mb.Config.BatchSize)
+	timer := time.NewTimer(mb.Config.BatchInterval)
+	defer timer.Stop()
+
+	for {
+		select {
+		case <-mb.shutdownCh:
+			// If microbatch is shutting down & batch > 0, send reminaing jobs to batch channel
+			if len(batch) > 0 {
+				mb.batchCh <- batch
+			}
+			return
+		// When jobs are received on the jobs channel
+		case job := <-mb.jobsCh:
+			batch = append(batch, job)
+			// If batch size is reached, send batch slice to batch channel
+			if len(batch) == cap(batch) {
+				mb.batchCh <- batch
+				batch = make([]Job, 0, mb.Config.BatchSize)
+				timer.Reset(mb.Config.BatchInterval)
+			}
+		// If batch interval is reached & batch > 0, send jobs to batch channel
+		case <-timer.C:
+			if len(batch) > 0 {
+				mb.batchCh <- batch
+				batch = make([]Job, 0, mb.Config.BatchSize)
+			}
+			timer.Reset(mb.Config.BatchInterval)
+		}
+	}
+}
+
+// Worker that watches the batch channel and sends job batches for processing
+func (mb *MicroBatcher) startProcessWorker() {
+	mb.wg.Add(1)
 	go func() {
-		// Decrease waitGroup counter when goroutine completes. Defers execution of this.
-		defer mb.waitGroup.Done()
-		var batch []Job
-		var batchTimer *time.Timer
-		for {
-			select {
-			// Jobs coming into jobs channel
-			case job := <-mb.jobsCh:
-				batch = append(batch, job)
-				// Send job for processing once batch size limit is reached
-				if len(batch) >= mb.batchSize {
-					mb.processBatch(batch)
-					batch = nil
-					// Reset batchTimer once batch is processed
-					if batchTimer != nil {
-						batchTimer.Stop()
-						batchTimer = nil
-					}
-					// If batchTimer is nil, start a new timer with duration defined in batchFrequency
-				} else if batchTimer == nil {
-					batchTimer = time.NewTimer(mb.batchFreq)
-					go func() {
-						// Process the batch if timer has completed and no further jobs are received
-						<-batchTimer.C
-						mb.processBatch(batch)
-						batch = nil
-					}()
-				}
-			// Shutdown signal received. Send job for processing then shut down MicroBatcher gracefully.
-			case <-mb.shutdownCh:
-				if len(batch) > 0 {
-					mb.processBatch(batch)
-					// Wait for all tasks to complete
-					mb.waitGroup.Wait()
-				}
-				return
+		defer mb.wg.Done()
+		for batch := range mb.batchCh {
+			results := mb.batchProcessor.Process(batch)
+			// Send processed results to results channel
+			mb.resultsCh <- results
+			if mb.Config.ShowBatchInfo {
+				fmt.Printf("Processed batch of %d jobs\n", len(batch))
 			}
 		}
 	}()
-}
-
-// Send job for processing by BatchProcessor as a callback
-func (mb *MicroBatcher) processBatch(batch []Job) {
-	mb.funcProcessBatch(batch)
 }
 
 // Method to shut down the MicroBatcher

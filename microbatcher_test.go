@@ -33,7 +33,7 @@ func (bp *MockBatchProcessor) Process(jobs []microbatcher.Job) microbatcher.JobR
 	return results
 }
 
-func TestMicroBatcher(t *testing.T) {
+func TestMicroBatcherBatchSizeHit(t *testing.T) {
 	jobCompleteCount := 0
 	config := microbatcher.Config{
 		BatchSize:     5,

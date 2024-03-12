@@ -37,7 +37,7 @@ func TestMicroBatcher(t *testing.T) {
 	jobCompleteCount := 0
 	config := microbatcher.Config{
 		BatchSize:     5,
-		BatchInterval: time.Millisecond * 500,
+		BatchInterval: time.Second * 5,
 		ShowBatchInfo: true,
 	}
 
@@ -92,4 +92,34 @@ func TestMicroBatcher(t *testing.T) {
 
 	// Expect 5 batches (of 5 jobs) to be completed
 	assert.Equal(t, 5, jobCompleteCount)
+}
+
+func TestMicroBatcherInvalidSize(t *testing.T) {
+	config := microbatcher.Config{
+		BatchSize:     0,
+		BatchInterval: time.Millisecond * 500,
+		ShowBatchInfo: true,
+	}
+
+	batchProcessor := &MockBatchProcessor{}
+
+	// Instantiate new MicroBatcher
+	_, err := microbatcher.NewMicroBatcher(config, batchProcessor)
+
+	assert.Error(t, err)
+}
+
+func TestMicroBatcherInvalidInterval(t *testing.T) {
+	config := microbatcher.Config{
+		BatchSize:     10,
+		BatchInterval: time.Millisecond * 0,
+		ShowBatchInfo: true,
+	}
+
+	batchProcessor := &MockBatchProcessor{}
+
+	// Instantiate new MicroBatcher
+	_, err := microbatcher.NewMicroBatcher(config, batchProcessor)
+
+	assert.Error(t, err)
 }

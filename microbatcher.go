@@ -83,6 +83,8 @@ func (mb *MicroBatcher) startBatchingWorker() {
 		select {
 		case <-mb.shutdownCh:
 			// If microbatch is shutting down & batch > 0, send reminaing jobs to batch channel
+			job := <-mb.jobsCh
+			batch = append(batch, job)
 			if len(batch) > 0 {
 				mb.batchCh <- batch
 			}

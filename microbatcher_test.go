@@ -94,6 +94,55 @@ func TestMicroBatcher(t *testing.T) {
 	assert.Equal(t, 5, jobCompleteCount)
 }
 
+func TestMicroBatcherIntervalHit(t *testing.T) {
+	jobCompleteCount := 0
+	config := microbatcher.Config{
+		BatchSize:     5,
+		BatchInterval: time.Millisecond * 500,
+		ShowBatchInfo: true,
+	}
+
+	batchProcessor := &MockBatchProcessor{}
+
+	// Instantiate new MicroBatcher
+	batcher, err := microbatcher.NewMicroBatcher(config, batchProcessor)
+	if err != nil {
+		fmt.Println("Error:", err)
+	}
+
+	// Start the MicroBatcher
+	batcher.Start()
+
+	// Start a goroutine to receive and process batch results
+	resultCh := batcher.GetBatchResults()
+	go func() {
+		for batchResult := range resultCh {
+			fmt.Printf("Batch result: %v\n", batchResult)
+			jobCompleteCount++
+		}
+	}()
+
+	// Submit jobs
+	for i := 0; i < 4; i++ {
+		job := Job{ID: i}
+		err := batcher.SubmitJob(job)
+		if err != nil {
+			fmt.Println("Error:", err)
+			continue
+		}
+		// Assert no errors when submitting jobs normally
+		assert.NoError(t, err)
+	}
+
+	time.Sleep(2 * time.Second)
+
+	// Shutdown the MicroBatcher
+	batcher.Shutdown()
+
+	// Expect 1 batch to be completed
+	assert.Equal(t, 1, jobCompleteCount)
+}
+
 func TestMicroBatcherInvalidSize(t *testing.T) {
 	config := microbatcher.Config{
 		BatchSize:     0,

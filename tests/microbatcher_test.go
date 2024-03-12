@@ -34,6 +34,7 @@ func (bp *MockBatchProcessor) Process(jobs []microbatcher.Job) microbatcher.JobR
 }
 
 func TestMicroBatcher(t *testing.T) {
+	jobCompleteCount := 0
 	config := microbatcher.Config{
 		BatchSize:     5,
 		BatchInterval: time.Millisecond * 500,
@@ -56,6 +57,7 @@ func TestMicroBatcher(t *testing.T) {
 	go func() {
 		for batchResult := range resultCh {
 			fmt.Printf("Batch result: %v\n", batchResult)
+			jobCompleteCount++
 		}
 	}()
 
@@ -67,6 +69,7 @@ func TestMicroBatcher(t *testing.T) {
 			fmt.Println("Error:", err)
 			continue
 		}
+		// Assert no errors when submitting jobs normally
 		assert.NoError(t, err)
 	}
 
@@ -83,6 +86,10 @@ func TestMicroBatcher(t *testing.T) {
 			fmt.Println("Error:", err)
 			continue
 		}
+		// Assert error received that microbatcher has shut down
 		assert.Error(t, err)
 	}
+
+	// Expect 5 batches (of 5 jobs) to be completed
+	assert.Equal(t, 5, jobCompleteCount)
 }

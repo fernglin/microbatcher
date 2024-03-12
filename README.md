@@ -1,4 +1,4 @@
-# Golang Micro-batching Library
+# A Basic Golang Micro-batching Library
 
 Micro-batching is a technique used in data processing where small amounts of data are collected over a short period and processed together as a batch. It improves efficiency by reducing overhead associated with processing individual items, often used in streaming systems for more optimized throughput and resource utilization.
 
